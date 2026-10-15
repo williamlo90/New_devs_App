@@ -239,7 +239,7 @@ class LocalStorageManager {
     
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.includes('supabase') || key.includes('sb-'))) {
+      if (key && (key === 'base360-auth-token' || key.includes('supabase') || key.includes('sb-'))) {
         const value = localStorage.getItem(key);
         if (value) {
           preservedData[key] = value;

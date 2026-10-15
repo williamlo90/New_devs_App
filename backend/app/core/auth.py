@@ -83,7 +83,8 @@ async def authenticate_request(
     # Check cache first
     if token_hash in auth_cache:
         cached_data = auth_cache[token_hash]
-        if datetime.now().timestamp() - cached_data["timestamp"] < CACHE_DURATION:
+        if (datetime.now().timestamp() - cached_data["timestamp"] < CACHE_DURATION
+                and cached_data.get("expires_at", 0) > datetime.now().timestamp()):
             cached_user = cached_data["user"]
             # If not, force a refresh to get proper tenant isolation
             if not cached_user.tenant_id:
@@ -252,8 +253,11 @@ async def authenticate_request(
         logger.info(f"==================== TENANT ID EXTRACTION ====================")
         logger.info(f"User: {user.email} (ID: {user.id})")
 
-        # Use TenantResolver for comprehensive tenant resolution
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        # Only server-managed metadata from the verified identity may grant tenancy.
+        # Never infer membership from email, user-editable metadata or request headers.
+        tenant_id = (getattr(user, "app_metadata", None) or {}).get("tenant_id")
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise HTTPException(status_code=403, detail="Tenant membership required")
 
         # If we found a tenant_id and it's not in the user's metadata, update it for next time
         current_tenant_in_metadata = None
@@ -281,6 +285,7 @@ async def authenticate_request(
         auth_cache[token_hash] = {
             "user": auth_user,
             "timestamp": datetime.now().timestamp(),
+            "expires_at": jwt.get_unverified_claims(token).get("exp", 0),
         }
 
         # Clean up old cache entries (keep cache size manageable)
